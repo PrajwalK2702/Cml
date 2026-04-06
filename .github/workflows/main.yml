@@ -1,4 +1,4 @@
-name: HeartGuard — Visible CI/CD + Security to AWS Elastic Beanstalk
+name: HeartGuard
 
 on:
   push:
@@ -15,20 +15,18 @@ permissions:
 
 env:
   PYTHON_VERSION: '3.11'
-  AWS_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
 
 jobs:
+  # ─────────────────────────────────────────
+  # JOB 1: Build & Test  (no dependencies — first job)
+  # ─────────────────────────────────────────
   build_and_test:
     name: Build & Test
     runs-on: ubuntu-latest
-    needs: workflow_overview
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-
-      - name: Show build start
-        run: echo "Starting Build & Test stage..."
 
       - name: Set up Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
@@ -73,6 +71,9 @@ jobs:
           echo "Running automated Django tests"
           python manage.py test --verbosity=2
 
+  # ─────────────────────────────────────────
+  # JOB 2: Gitleaks Secret Scan
+  # ─────────────────────────────────────────
   gitleaks_scan:
     name: Gitleaks Secret Scan
     runs-on: ubuntu-latest
@@ -81,15 +82,17 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-
-      - name: Show Gitleaks scan start
-        run: echo "Running Gitleaks secret scanning..."
+        with:
+          fetch-depth: 0
 
       - name: Run Gitleaks
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  # ─────────────────────────────────────────
+  # JOB 3: Deploy to Elastic Beanstalk
+  # ─────────────────────────────────────────
   deploy:
     name: Deploy to Elastic Beanstalk
     runs-on: ubuntu-latest
@@ -99,9 +102,6 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-
-      - name: Show deployment start
-        run: echo "Starting deployment to AWS Elastic Beanstalk..."
 
       - name: Set up Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
@@ -156,7 +156,6 @@ jobs:
 
       - name: Verify Deployment Health
         run: |
-          echo "Checking environment health after deployment"
           STATUS=$(aws elasticbeanstalk describe-environments \
             --application-name ${{ secrets.EB_APP_NAME }} \
             --environment-names ${{ secrets.EB_ENV_NAME }} \
@@ -165,36 +164,55 @@ jobs:
           echo "Environment health: $STATUS"
 
       - name: Print Deployment URL
+        id: url
         run: |
           URL=$(aws elasticbeanstalk describe-environments \
             --application-name ${{ secrets.EB_APP_NAME }} \
             --environment-names ${{ secrets.EB_ENV_NAME }} \
             --query 'Environments[0].CNAME' \
             --output text)
+          echo "target=http://$URL" >> $GITHUB_OUTPUT
           echo "HeartGuard deployed to: http://$URL"
 
-  owasp-zap:
+  # ─────────────────────────────────────────
+  # JOB 4: OWASP ZAP Baseline Scan
+  # ─────────────────────────────────────────
+  owasp_zap:
     name: OWASP ZAP Baseline Scan
     runs-on: ubuntu-latest
-    needs: deploy-amplify
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: deploy
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Validate ZAP target URL
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
+
+      - name: Get deployed app URL
+        id: app_url
         run: |
-          if [ -z "${{ vars.ZAP_TARGET_URL }}" ]; then
-            echo "ERROR: ZAP_TARGET_URL variable is not set in GitHub Variables"
-            exit 1
-          fi
-          echo "ZAP target: ${{ vars.ZAP_TARGET_URL }}"
+          URL=$(aws elasticbeanstalk describe-environments \
+            --application-name ${{ secrets.EB_APP_NAME }} \
+            --environment-names ${{ secrets.EB_ENV_NAME }} \
+            --query 'Environments[0].CNAME' \
+            --output text)
+          echo "target=http://$URL" >> $GITHUB_OUTPUT
+          echo "Running OWASP ZAP scan against: http://$URL"
 
       - name: Run OWASP ZAP Baseline Scan
         uses: zaproxy/action-baseline@v0.12.0
         with:
-          target: ${{ vars.ZAP_TARGET_URL }}
+          target: ${{ steps.app_url.outputs.target }}
           fail_action: false
           allow_issue_writing: false
           cmd_options: '-a -j -I -T 10'
+
+      - name: ZAP scan complete
+        run: echo "OWASP ZAP baseline scan finished. Check workflow artifacts for the full report."
