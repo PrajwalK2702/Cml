@@ -173,38 +173,28 @@ jobs:
             --output text)
           echo "HeartGuard deployed to: http://$URL"
 
-  zap_scan:
+  owasp-zap:
     name: OWASP ZAP Baseline Scan
     runs-on: ubuntu-latest
-    needs: deploy
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: deploy-amplify
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     steps:
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
-          aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Get deployed application URL
-        id: app_url
+      - name: Validate ZAP target URL
         run: |
-          URL=$(aws elasticbeanstalk describe-environments \
-            --application-name ${{ secrets.EB_APP_NAME }} \
-            --environment-names ${{ secrets.EB_ENV_NAME }} \
-            --query 'Environments[0].CNAME' \
-            --output text)
-          echo "target=http://$URL" >> $GITHUB_OUTPUT
-          echo "Running OWASP ZAP scan against: http://$URL"
+          if [ -z "${{ vars.ZAP_TARGET_URL }}" ]; then
+            echo "ERROR: ZAP_TARGET_URL variable is not set in GitHub Variables"
+            exit 1
+          fi
+          echo "ZAP target: ${{ vars.ZAP_TARGET_URL }}"
 
       - name: Run OWASP ZAP Baseline Scan
         uses: zaproxy/action-baseline@v0.12.0
         with:
-          target: ${{ steps.app_url.outputs.target }}
+          target: ${{ vars.ZAP_TARGET_URL }}
           fail_action: false
           allow_issue_writing: false
-
-      - name: ZAP completion message
-        run: echo "OWASP ZAP baseline scan completed. Review the workflow logs and artifacts for findings."
+          cmd_options: '-a -j -I -T 10'
