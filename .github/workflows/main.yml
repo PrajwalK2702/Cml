@@ -1,4 +1,4 @@
-name: HeartGuard
+name: HeartGuard — Visible CI/CD + Security to AWS Elastic Beanstalk
 
 on:
   push:
@@ -18,25 +18,6 @@ env:
   AWS_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
 
 jobs:
-  workflow_overview:
-    name: Workflow Overview
-    runs-on: ubuntu-latest
-    steps:
-      - name: Show pipeline stages
-        run: |
-          echo "========================================="
-          echo "HEARTGUARD CI/CD + DEVSECOPS PIPELINE"
-          echo "========================================="
-          echo "1. Build & dependency installation"
-          echo "2. Django configuration validation"
-          echo "3. Database migration validation"
-          echo "4. Automated Django test execution"
-          echo "5. Gitleaks secret scanning"
-          echo "6. Deploy to AWS Elastic Beanstalk"
-          echo "7. Post-deployment OWASP ZAP baseline scan"
-          echo "8. Deployment health verification"
-          echo "========================================="
-
   build_and_test:
     name: Build & Test
     runs-on: ubuntu-latest
