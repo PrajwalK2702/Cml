@@ -177,46 +177,46 @@ jobs:
   # ─────────────────────────────────────────
   # JOB 4: OWASP ZAP Baseline Scan
   # ─────────────────────────────────────────
-    owasp_zap:
-      name: OWASP ZAP Baseline Scan
-      runs-on: ubuntu-latest
-      needs: deploy
-      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+  owasp_zap:
+    name: OWASP ZAP Baseline Scan
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
-      steps:
-        - name: Checkout repository
-          uses: actions/checkout@v4
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-        - name: Configure AWS Credentials
-          uses: aws-actions/configure-aws-credentials@v4
-          with:
-            aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-            aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-            aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
-            aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
 
-        - name: Get deployed app URL
-          id: app_url
-          run: |
-            URL=$(aws elasticbeanstalk describe-environments \
-              --application-name ${{ secrets.EB_APP_NAME }} \
-              --environment-names ${{ secrets.EB_ENV_NAME }} \
-              --query 'Environments[0].CNAME' \
-              --output text)
-            echo "target=http://$URL" >> $GITHUB_OUTPUT
-            echo "Running OWASP ZAP scan against: http://$URL"
+      - name: Get deployed app URL
+        id: app_url
+        run: |
+          URL=$(aws elasticbeanstalk describe-environments \
+            --application-name ${{ secrets.EB_APP_NAME }} \
+            --environment-names ${{ secrets.EB_ENV_NAME }} \
+            --query 'Environments[0].CNAME' \
+            --output text)
+          echo "target=http://$URL" >> $GITHUB_OUTPUT
+          echo "Running OWASP ZAP scan against: http://$URL"
 
-        - name: Fix workspace permissions for ZAP
-          run: chmod -R 777 ${{ github.workspace }}
+      - name: Fix workspace permissions for ZAP
+        run: chmod -R 777 ${{ github.workspace }}
 
-        - name: Run OWASP ZAP Baseline Scan
-          uses: zaproxy/action-baseline@v0.14.0
-          with:
-            target: ${{ steps.app_url.outputs.target }}
-            fail_action: false
-            allow_issue_writing: false
-            artifact_name: 'zap-scan-report'
-            cmd_options: '-a -j -I -T 10'
+      - name: Run OWASP ZAP Baseline Scan
+        uses: zaproxy/action-baseline@v0.14.0
+        with:
+          target: ${{ steps.app_url.outputs.target }}
+          fail_action: false
+          allow_issue_writing: false
+          artifact_name: 'zap-scan-report'
+          cmd_options: '-a -j -I -T 10'
 
-        - name: ZAP scan complete
-          run: echo "OWASP ZAP baseline scan finished. Check workflow artifacts for the full report."
+      - name: ZAP scan complete
+        run: echo "OWASP ZAP baseline scan finished. Check workflow artifacts for the full report."
